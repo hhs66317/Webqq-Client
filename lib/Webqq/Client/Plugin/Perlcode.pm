@@ -1,37 +1,37 @@
-package Webqq::Client::App::Perlcode;
+package Webqq::Client::Plugin::Perlcode;
 use File::Temp qw/tempfile/;
 use Webqq::Client::Util qw(console_stderr);
 use File::Path qw/mkpath rmtree/;
 use IPC::Run qw(run timeout start pump finish harness);
 use POSIX qw(strftime);
-use Exporter 'import';
-@EXPORT = qw(Perlcode);
 
 if($^O !~ /linux/){
     console_stderr "Webqq::Client::App::Perlcode只能运行在linux系统上\n";
     exit;
 }
 chomp(my $PERL_COMMAND = `/bin/env which perl`);
-mkpath "/tmp/webqq/log/",{owner=>"nobody",group=>"nobody",mode=>0711};
-mkpath "/tmp/webqq/bin/",{owner=>"nobody",group=>"nobody",mode=>0711};
-mkpath "/tmp/webqq/src/",{owner=>"nobody",group=>"nobody",mode=>0711};
+mkpath "/tmp/webqq/log/",{owner=>"nobody",group=>"nobody",mode=>0555};
+mkpath "/tmp/webqq/bin/",{owner=>"nobody",group=>"nobody",mode=>0555};
+mkpath "/tmp/webqq/src/",{owner=>"nobody",group=>"nobody",mode=>0555};
 chown +(getpwnam("nobody"))[2,3],"/tmp/webqq/";
 chown +(getpwnam("nobody"))[2,3],"/tmp/webqq/log";
 chown +(getpwnam("nobody"))[2,3],"/tmp/webqq/bin";
 chown +(getpwnam("nobody"))[2,3],"/tmp/webqq/src";
 
 open LOG,">>/tmp/webqq/log/exec.log" or die $!;
-sub Perlcode{
-    my ($msg,$client,$perl_path) = @_;
-    return if time - $msg->{msg_time} > 10;
+sub call{
+    my ($client,$msg,$perl_path) = @_;
+    return 1 if time - $msg->{msg_time} > 10;
     $PERL_COMMAND = $perl_path if defined $perl_path;
-    if($msg->{content} =~/(?::c|>>>)(.*?)(?::e$|__END__|$)/s or $msg->{content} =~/perl\s+-e\s+'([^']+)'/s){
+    if($msg->{content} =~/(?:>>>)(.*?)(?:__END__|$)/s or $msg->{content} =~/perl\s+-e\s+'([^']+)'/s){
+        $msg->{allow_plugin} = 0;
         my $doc = '';
         my $code = $1;
+        $code=~s/^\s+|\s+$//g;
         $code=~s/CORE:://g;
         $code=~s/CORE::GLOBAL:://g;
-        unless($code=~/^\s+$/s){
-            $code = q#BEGIN{*CORE::GLOBAL::fork=sub{};}$|=1;use POSIX qw(setuid setgid);{my($u,$g)= (getpwnam("nobody"))[2,3];chdir '/tmp/webqq/bin';chroot '/tmp/webqq/bin' or die "chroot fail: $!";chdir "/";setuid($u);setgid($g);%ENV=();}# .  $code;
+        if($code){
+            $code = q#use feature qw(say);BEGIN{use File::Path;use BSD::Resource;setrlimit(RLIMIT_NOFILE,10,10);setrlimit(RLIMIT_CPU,8,8);setrlimit(RLIMIT_FSIZE,1024,1024);setrlimit(RLIMIT_NPROC,5,5);setrlimit(RLIMIT_STACK,1024*1024*10,1024*1024*10);setrlimit(RLIMIT_DATA,1024*1024*10,1024*1024*10);*CORE::GLOBAL::fork=sub{};}$|=1;use POSIX qw(setuid setgid);{my($u,$g)= (getpwnam("nobody"))[2,3];mkpath('/tmp/webqq/bin/',{owner=>$u,group=>$g,mode=>0555}) unless -e '/tmp/webqq/bin';chdir '/tmp/webqq/bin';chroot '/tmp/webqq/bin' or die "chroot fail: $!";chdir "/";setuid($u);setgid($g);%ENV=();}# .  $code;
             my ($fh, $filename) = tempfile("webqq_perlcode_XXXXXXXX",SUFFIX =>".pl",DIR => "/tmp/webqq/src");
             print $code,"\n",$filename,"\n" if $client->{debug};
             print $fh $code;
@@ -72,7 +72,10 @@ sub Perlcode{
 
             $client->reply_message($msg,$doc) if $doc;
         }
+        return 0;
     }
+
+    return 1;
 }
 sub truncate {
     my $out_and_err = shift;

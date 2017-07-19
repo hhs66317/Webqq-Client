@@ -1,12 +1,12 @@
-package Webqq::Client::App::ShowMsg;
+package Webqq::Client::Plugin::ShowMsg;
 use Webqq::Client::Util qw(console);
 use POSIX qw(strftime);
-use Exporter 'import';
-our @EXPORT = qw(ShowMsg);
 use Encode;
 
-sub ShowMsg{
+sub call{
+    my $client = shift;
     my $msg = shift;
+    my $attach = shift; 
     if($msg->{type} eq 'group_message'){
         #$msg是一个群消息的hash引用，包含如下key
         
@@ -32,11 +32,12 @@ sub ShowMsg{
         my $msg_sender_nick = $msg->from_nick;
         my $msg_sender_card = $msg->from_card if $msg->{msg_class} eq 'recv';
         my $msg_sender = $msg_sender_card || $msg_sender_nick;
+        $msg_sender = "昵称未知" unless defined $msg_sender;
         #my $msg_sender_qq  = $msg->from_qq;
         format_msg(
                 strftime("[%y/%m/%d %H:%M:%S]",localtime($msg->{msg_time}))
             .   "\@$msg_sender(在群:$group_name) 说: ",
-                $msg->{content}
+                $msg->{content} . $attach
         );         
     }
     #我们多了如下的get数据项
@@ -51,11 +52,13 @@ sub ShowMsg{
         my $msg_receiever_nick = $msg->to_nick;
         my $msg_receiever_markname = $msg->to_markname if $msg->{msg_class} eq 'send';
         my $msg_receiever = $msg_receiever_markname || $msg_receiever_nick;
+        $msg_receiever = "昵称未知" unless defined $msg_receiever;
+        $msg_sender = "昵称未知" unless defined $msg_sender;
         
         format_msg(
                 strftime("[%y/%m/%d %H:%M:%S]",localtime($msg->{msg_time}))
-            .   "\@$msg_sender_nick(对好友:\@$msg_receiever_nick) 说: ",
-            $msg->{content} 
+            .   "\@$msg_sender(对好友:\@$msg_receiever) 说: ",
+            $msg->{content}  . $attach
         );
     }
 
@@ -65,12 +68,40 @@ sub ShowMsg{
     elsif($msg->{type} eq 'sess_message'){
         my $msg_sender_nick = $msg->from_nick;
         my $msg_receiever_nick = $msg->to_nick;
-        format_msg(
-            strftime("[%y/%m/%d %H:%M:%S]",localtime($msg->{msg_time}))
-            .   "\@$msg_sender_nick(对陌生人:\@$msg_receiever_nick) 说: ",
-            $msg->{content}
-        );
+        my $via_name = $msg->via_name;
+        my $via_type = $msg->via_type;
+        $msg_sender_nick = "昵称未知" unless defined $msg_sender_nick;
+        $msg_receiever_nick= "昵称未知" unless defined $msg_receiever_nick;
+        if($msg->{msg_class} eq 'recv'){
+            format_msg(
+                strftime("[%y/%m/%d %H:%M:%S]",localtime($msg->{msg_time}))
+                .   "\@$msg_sender_nick(来自$via_type:$via_name 对:\@$msg_receiever_nick) 说: ",
+                $msg->{content} . $attach
+            );
+        }
+        elsif($msg->{msg_class} eq 'send'){
+            format_msg(
+                strftime("[%y/%m/%d %H:%M:%S]",localtime($msg->{msg_time}))
+                .   "\@$msg_sender_nick(对:\@$msg_receiever_nick 来自$via_type:$via_name) 说: ",
+                $msg->{content} . $attach
+            );
+        }
     }
+
+    elsif($msg->{type} eq 'discuss_message'){
+        my $discuss_name = $msg->discuss_name;
+        my $msg_sender = $msg->from_nick;
+        $msg_sender = "昵称未知" unless defined $msg_sender;
+        #my $msg_sender_qq  = $msg->from_qq;
+        format_msg(
+                strftime("[%y/%m/%d %H:%M:%S]",localtime($msg->{msg_time}))
+            .   "\@$msg_sender(在讨论组:$discuss_name) 说: ",
+                $msg->{content} . $attach
+        );
+        
+    }
+
+    return 1;
 }
 
 sub format_msg{
@@ -90,3 +121,5 @@ sub format_msg{
         console $lh, $lc,"\n";
     } 
 }
+
+1;

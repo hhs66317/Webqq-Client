@@ -1,4 +1,4 @@
-use JSON qw(from_json to_json);
+use JSON ;
 use Webqq::Client::Util qw(console);
 sub Webqq::Client::_login2{
     my $self = shift;
@@ -9,7 +9,7 @@ sub Webqq::Client::_login2{
                 :                           (Referer=>'http://d.web2.qq.com/proxy.html?v=20130916001&callback=1&id=2')
                 ;
     my %r = (
-        status      =>  $self->{qq_param}{status},
+        status      =>  $self->{qq_param}{state},
         ptwebqq     =>  $self->{qq_param}{ptwebqq},
         clientid    =>  $self->{qq_param}{clientid},
         psessionid  =>  $self->{qq_param}{psessionid},
@@ -19,19 +19,21 @@ sub Webqq::Client::_login2{
         $r{passwd_sig} = $self->{qq_param}{passwd_sig};
     }
 
-    my $response = $ua->post($api_url,[r=>to_json(\%r),clientid=>$self->{qq_param}{clientid},psessionid=>$self->{qq_param}{psessionid}], @headers);
-    if($response->is_success){
-        print $response->content() if $self->{debug};
-        my $content = $response->content();
-        my $data = from_json($content);
-        if($data->{retcode} ==0){
-            $self->{qq_param}{psessionid} = $data->{result}{psessionid};
-            $self->{qq_param}{vfwebqq} = $data->{result}{vfwebqq};
-            $self->{login_state} = 'success';
-            console "登录成功\n";
+    for(my $i=0;$i<=$self->{ua_retry_times};$i++){
+        my $response = $ua->post($api_url,[r=>JSON->new->utf8->encode(\%r)], @headers);
+        if($response->is_success){
+            print $response->content() if $self->{debug};
+            my $content = $response->content();
+            my $data = JSON->new->utf8->decode($content);
+            if($data->{retcode} ==0){
+                $self->{qq_param}{psessionid} = $data->{result}{psessionid};
+                #$self->{qq_param}{vfwebqq} = $data->{result}{vfwebqq};
+                $self->_cookie_proxy();
+                $self->{login_state} = 'success';
+                return 1;
+            }
         }
-        return 1;
     }
-    else{return 0}
+    return 0;
 }
 1;

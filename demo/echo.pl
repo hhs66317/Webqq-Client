@@ -2,20 +2,21 @@
 #你发送什么信息给它，它就回复相同的内容给你
 use lib '../lib/';
 use Webqq::Client;
-use Webqq::Message;
-use Webqq::Client::Util qw(console);
 use Digest::MD5 qw(md5_hex);
 
-my $qq = 12345678;
+my $qq = 12345678  ;
 my $pwd = md5_hex('your password');
 my $client = Webqq::Client->new(debug=>0);
 $client->login( qq=> $qq, pwd => $pwd);
 
+
+$client->load("ShowMsg");
 #设置全局默认的发送消息后的回调函数，主要用于判断消息是否成功发送
 $client->on_send_message = sub{
     my ($msg,$is_success,$status) = @_;
-    ##程序默认输出的是UTF8编码，你的终端可能是其他编码，做下自适应
-    console "msg_id: ",$msg->{msg_id}," ",$status,"\n" ;
+
+    #使用ShowMsg插件打印发送的消息
+    $client->call("ShowMsg",$msg);
 };
 
 #设置接收到消息后的回调函数
@@ -28,26 +29,37 @@ $client->on_receive_message = sub{
     #    to_uin      => 消息接受者uin，就是自己的qq
     #    content     => 消息内容，采用UTF8编码
     #    msg_time    => 消息的接收时间
+    #    ttl
+    #    msg_class
+    #    allow_plugin
     #}
     my $msg = shift;
-    
+   
+    #使用ShowMsg插件打印接收到的消息 
+    $client->call("ShowMsg",$msg);
+
     #新的方式
     $client->reply_message($msg,$msg->{content});
 
-    #老的方式，你需要手动创建一个消息结构，再进行发送，create_msg -> send_message
+    #老的方式，你需要根据消息的类型调用相应的发送消息方法
     #if($msg->{type} eq 'message'){
     #    $client->send_message(
-    #        #使用create_msg生成一个消息，设置发送者和消息内容 
-    #        $client->create_msg( to_uin=>$msg->{from_uin},content=>$msg->{content}  )
+    #        to_uin     =>  $msg->{from_uin},
+    #        content    =>  $msg->{content} ,
     #    ) ;
     #}
     #elsif($msg->{type} eq 'group_message'){
-    #    my $to_uin = $client->search_group($msg->{group_code})->{gid} || $msg->{from_uin};
     #    $client->send_group_message(
-    #        #使用create_group_msg生成一个群消息，设置发送者和消息内容为接收到的群和群消息
-    #        $client->create_group_msg( to_uin=>$to_uin,content=>$msg->{content}  )
+    #        to_uin     =>  $msg->{from_uin},
+    #        content    =>  $msg->{content},
     #    ) ;        
     #}
+    #elsif($msg->{type} eq 'sess_message'){
+    #    $client->send_sess_message(
+    #        to_uin     =>  $msg->{from_uin},
+    #        content    =>  $msg->{content},
+    #        group_code =>  $msg->{group_code},
+    #    );
+    #}
 };
-$SIG{INT} = sub{$client->logout();exit;};
 $client->run;

@@ -3,43 +3,53 @@ use Encode;
 use Storable qw(dclone);
 sub Webqq::Client::_send_message{
     my($self,$msg) = @_;
-    my $msg_origin = dclone($msg);
     #将整个hash从UTF8还原为unicode
-    $msg->{$_} = decode("utf8",$msg->{$_} ) for keys %$msg;
     my $ua = $self->{asyn_ua};
-    my $send_message_callback = $msg->{cb};
-    ref $cb eq 'CODE'?$send_message_callback = $cb:$send_message_callback = $self->{on_send_message};
     my $callback = sub{
         my $response = shift;   
         print $response->content() if $self->{debug};
         my $status = $self->parse_send_status_msg( $response->content() );
-        if(ref $send_message_callback eq 'CODE' and defined $status){
-            $send_message_callback->(
-                $msg_origin,                   #msg
-                $status->{is_success},  #is_success
-                $status->{status}       #status
-            );
+        if(defined $status and $status->{is_success} == 0){
+            $self->send_message($msg);
+            return;
+        }
+        elsif(defined $status){
+            if(ref $msg->{cb} eq 'CODE'){
+                $msg->{cb}->(
+                    $msg,                   #msg
+                    $status->{is_success},  #is_success
+                    $status->{status}       #status
+                );
+            }
+            if(ref $self->{on_send_message} eq 'CODE'){
+                $self->{on_send_message}->(
+                    $msg,                   #msg
+                    $status->{is_success},  #is_success
+                    $status->{status}       #status
+                );
+            }
         }
     };
-    my $api_url = 'http://d.web2.qq.com/channel/send_buddy_msg2';
+    my $api_url = ($self->{qq_param}{is_https}?'https':'http') . '://d.web2.qq.com/channel/send_buddy_msg2';
     my @headers = $self->{type} eq 'webqq'? (Referer=>'http://d.web2.qq.com/proxy.html?v=20110331002&callback=1&id=3')
                 :                           (Referer=>'http://d.web2.qq.com/proxy.html?v=20130916001&callback=1&id=2')
                 ;
-    my $content = [$msg->{content},"",[]];
+    my $content = [decode("utf8",$msg->{content}),"",[]];
     my %s = (
         to      => $msg->{to_uin},
-        face    => 570,
+        face    => $self->{qq_database}{user}{face} || 570,
         content => JSON->new->utf8->encode($content),
         msg_id  =>  $msg->{msg_id},
         clientid => $self->{qq_param}{clientid},
         psessionid  => $self->{qq_param}{psessionid},
     );
+    $s{content} = decode("utf8",$s{content}); 
     
     if($self->{type} eq 'smartqq'){
-        $s{face} = "591";
+        $s{face} = $self->{qq_database}{user}{face} || "591";
     }
     my $post_content = [
-        r           =>  decode("utf8",JSON->new->encode(\%s)),
+        r           =>  JSON->new->utf8->encode(\%s),
     ];
     if($self->{type} eq 'webqq'){
         push @$post_content,(
